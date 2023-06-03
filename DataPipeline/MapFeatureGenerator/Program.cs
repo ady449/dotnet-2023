@@ -115,8 +115,11 @@ public static class Program
                 {
                     Id = featureId,
                     Coordinates = (totalCoordinateCount, new List<Coordinate>()),
-                    PropertyKeys = (totalPropertyCount, new List<string>(way.Tags.Count)),
-                    PropertyValues = (totalPropertyCount, new List<string>(way.Tags.Count))
+
+                    //folosesc dictionare pentru a reduce complexitatea
+
+                    Property = (totalPropertyCount, new Dictionary<string,string>(way.Tags.Count)),
+                    
                 };
 
                 var geometryType = GeometryType.Polyline;
@@ -126,10 +129,10 @@ public static class Program
                 {
                     if (tag.Key == "name")
                     {
-                        labels[^1] = totalPropertyCount * 2 + featureData.PropertyKeys.keys.Count * 2 + 1;
+                        labels[^1] = totalPropertyCount * 2 + featureData.Property.property.Count * 2 + 1;
                     }
-                    featureData.PropertyKeys.keys.Add(tag.Key);
-                    featureData.PropertyValues.values.Add(tag.Value);
+                   
+                    featureData.Property.property.Add(tag.Key,tag.Value);
                 }
 
                 foreach (var nodeId in way.NodeIds)
@@ -144,10 +147,10 @@ public static class Program
 
                     foreach (var (key, value) in node.Tags)
                     {
-                        if (!featureData.PropertyKeys.keys.Contains(key))
+                        if (!featureData.Property.property.ContainsKey(key))
                         {
-                            featureData.PropertyKeys.keys.Add(key);
-                            featureData.PropertyValues.values.Add(value);
+                            featureData.Property.property.Add(key,value);
+                            
                         }
                     }
 
@@ -168,10 +171,10 @@ public static class Program
                 }
                 featureData.GeometryType = (byte)geometryType;
 
-                totalPropertyCount += featureData.PropertyKeys.keys.Count;
+                totalPropertyCount += featureData.Property.property.Count;
                 totalCoordinateCount += featureData.Coordinates.coordinates.Count;
 
-                if (featureData.PropertyKeys.keys.Count != featureData.PropertyValues.values.Count)
+                if (featureData.Property.property.Keys.Count != featureData.Property.property.Values.Count)
                 {
                     throw new InvalidDataContractException("Property keys and values should have the same count");
                 }
@@ -189,8 +192,8 @@ public static class Program
 
                 var featureId = Interlocked.Increment(ref featureIdCounter);
 
-                var featurePropKeys = new List<string>();
-                var featurePropValues = new List<string>();
+                
+                var featureProp = new Dictionary<string, string>();
 
                 labels.Add(-1);
                 for (var i = 0; i < node.Tags.Count; ++i)
@@ -198,18 +201,21 @@ public static class Program
                     var tag = node.Tags[i];
                     if (tag.Key == "name")
                     {
-                        labels[^1] = totalPropertyCount * 2 + featurePropKeys.Count * 2 + 1;
+                        labels[^1] = totalPropertyCount * 2 + featureProp.Count * 2 + 1;
                     }
+                    if (!featureProp.ContainsKey(tag.Key))
+                    {
 
-                    featurePropKeys.Add(tag.Key);
-                    featurePropValues.Add(tag.Value);
-                }
-
-                if (featurePropKeys.Count != featurePropValues.Count)
+                    featureProp.Add(tag.Key, tag.Value);
+                    }
+                 
+                if (featureProp.Keys.Count != featureProp.Values.Count)
                 {
                     throw new InvalidDataContractException("Property keys and values should have the same count");
                 }
+                }
 
+              
                 var fData = new FeatureData
                 {
                     Id = featureId,
@@ -218,13 +224,13 @@ public static class Program
                     {
                         new Coordinate(node.Latitude, node.Longitude)
                     }),
-                    PropertyKeys = (totalPropertyCount, featurePropKeys),
-                    PropertyValues = (totalPropertyCount, featurePropValues)
+                    Property = (totalPropertyCount, featureProp),
+                    
                 };
                 featuresData.Add(featureId, fData);
                 featureIds.Add(featureId);
 
-                totalPropertyCount += featurePropKeys.Count;
+                totalPropertyCount += featureProp.Count;
                 ++totalCoordinateCount;
             }
 
@@ -261,8 +267,8 @@ public static class Program
                 fileWriter.Write(featureData.GeometryType); // MapFeature: GeometryType
                 fileWriter.Write(featureData.Coordinates.offset); // MapFeature: CoordinateOffset
                 fileWriter.Write(featureData.Coordinates.coordinates.Count); // MapFeature: CoordinateCount
-                fileWriter.Write(featureData.PropertyKeys.offset * 2); // MapFeature: PropertiesOffset 
-                fileWriter.Write(featureData.PropertyKeys.keys.Count); // MapFeature: PropertyCount
+                fileWriter.Write(featureData.Property.offset * 2); // MapFeature: PropertiesOffset 
+                fileWriter.Write(featureData.Property.property.Count); // MapFeature: PropertyCount
             }
 
             // Record the current position in the stream
@@ -297,19 +303,20 @@ public static class Program
             foreach (var t in featureIds)
             {
                 var featureData = featuresData[t];
-                for (var i = 0; i < featureData.PropertyKeys.keys.Count; ++i)
+                foreach(var (key,value) in featureData.Property.property)
                 {
-                    ReadOnlySpan<char> k = featureData.PropertyKeys.keys[i];
-                    ReadOnlySpan<char> v = featureData.PropertyValues.values[i];
+                    ReadOnlySpan<char> k = key;
+                    ReadOnlySpan<char> v = value;
 
                     fileWriter.Write(stringOffset); // StringEntry: Offset
-                    fileWriter.Write(k.Length); // StringEntry: Length
-                    stringOffset += k.Length;
-
+                    fileWriter.Write(key.Length); // StringEntry: Length
+                    stringOffset += key.Length;
+                    
                     fileWriter.Write(stringOffset); // StringEntry: Offset
-                    fileWriter.Write(v.Length); // StringEntry: Length
-                    stringOffset += v.Length;
+                    fileWriter.Write(value.Length); // StringEntry: Length
+                    stringOffset += value.Length;
                 }
+               
             }
 
             // Record the current position in the stream
@@ -323,15 +330,15 @@ public static class Program
             foreach (var t in featureIds)
             {
                 var featureData = featuresData[t];
-                for (var i = 0; i < featureData.PropertyKeys.keys.Count; ++i)
+                foreach (var (key, value) in featureData.Property.property)
                 {
-                    ReadOnlySpan<char> k = featureData.PropertyKeys.keys[i];
+                    ReadOnlySpan<char> k = key;
                     foreach (var c in k)
                     {
                         fileWriter.Write((short)c);
                     }
-
-                    ReadOnlySpan<char> v = featureData.PropertyValues.values[i];
+                    
+                    ReadOnlySpan<char> v = value;
                     foreach (var c in v)
                     {
                         fileWriter.Write((short)c);
@@ -388,7 +395,7 @@ public static class Program
 
         public byte GeometryType { get; set; }
         public (int offset, List<Coordinate> coordinates) Coordinates { get; init; }
-        public (int offset, List<string> keys) PropertyKeys { get; init; }
-        public (int offset, List<string> values) PropertyValues { get; init; }
+        public (int offset, Dictionary<string, string> property) Property { get; init; }
+
     }
 }
